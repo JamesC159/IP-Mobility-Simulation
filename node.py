@@ -5,24 +5,18 @@ import threading
 import queue
 
 pktQueue = queue.Queue()
-routingQueue = queue.Queue()
-homeAgentQueue = queue.Queue()
 
 def main():
 	mainThread = threading.currentThread()
 	listenThread = threading.Thread(target = listen)
 	pktWrkThread = threading.Thread(target = pktWrkr)
-	routingWrkrThread = threading.Thread(target = routingWrkr)
-	homeAgntWrkrThread = threading.Thread(target = homeAgntWrkr)
 	listenThread.start()
 	pktWrkThread.start()
-	routingWrkrThread.start()
-	homeAgntWrkrThread.start()
 	for thread in threading.enumerate():
 		if thread is mainThread:
 			continue
 		else:
-			thread.join()
+			joinThread(thread)
 
 def listen():
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,29 +32,36 @@ def pktWrkr():
 	routing = "routing".encode()
 	homeAgent = "homeagent".encode()
 	pkt = "".encode()
+	localThreads = []
 	while True:
 		pkt = pktQueue.get(block = True)
 		print("Got packet")
 		protocol = pkt[:1]
 		pktStr = pkt.decode()
+		rThread = threading.Thread(target = routingWrkr, args = (pkt,))
+		hThread = threading.Thread(target = homeAgntWrkr, args = (pkt,))
 		if protocol == "R".encode():
 			print("Routing pkt: " + pktStr)
-			routingQueue.put(pkt)
+			localThreads.append(rThread)
+			rThread.start()
 		elif protocol == "H".encode():
 			print("Home Agent pkt: " + pktStr)
-			homeAgentQueue.put(pkt)
+			localThreads.append(hThread)
+			hThread.start()
 		else:
 			print("My packet:" + pktStr)
+	for thread in localThreads:
+		joinThread(thread)
 
-def routingWrkr():
-	while True:
-		pkt = routingQueue.get(block = True)
+def routingWrkr(pkt):
 		print("Routing Worker: " + pkt.decode())
 
-def homeAgntWrkr():
-	while True:
-		pkt = homeAgentQueue.get(block = True)
+def homeAgntWrkr(pkt):
 		print("Home Agent Worker: " + pkt.decode())
+
+def joinThread(thread):
+	if not thread.is_alive():
+		thread.join()
 
 if __name__ == "__main__":
 	main()
