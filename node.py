@@ -1,8 +1,6 @@
 import sys
 import socket
-import argparse
 import random
-import struct
 import threading
 import queue
 
@@ -44,12 +42,15 @@ def pktWrkr():
 		pkt = pktQueue.get(block = True)
 		print("Got packet")
 		protocol = pkt[:1]
+		pktStr = pkt.decode()
 		if protocol == "R".encode():
-			print("Routing: " + pkt.decode())
+			print("Routing pkt: " + pktStr)
 			routingQueue.put(pkt)
 		elif protocol == "H".encode():
-			print("Home Agent: " + pkt.decode())
+			print("Home Agent pkt: " + pktStr)
 			homeAgentQueue.put(pkt)
+		else:
+			print("My packet:" + pktStr)
 
 def routingWrkr():
 	while True:
