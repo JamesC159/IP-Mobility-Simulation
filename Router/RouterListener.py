@@ -17,7 +17,7 @@ class RouterListener(threading.Thread):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.TCP_IP, self.TCP_PORT))
         self.socket.listen(5)
-
+        self.homeAgent = ()
         self.ipCount = 2
         self.nodes = {}
 
@@ -47,7 +47,7 @@ class RouterListener(threading.Thread):
                     if (splitData[0] == 'REGISTER'):
 
                         # Allocate new IP address for node
-                        self.allocateIP(conn, addr, data)
+                        newIP = self.allocateIP(conn, addr, data)
 
                         if len(splitData) > 1:
 
@@ -59,7 +59,7 @@ class RouterListener(threading.Thread):
 
                             # Triggered when the node is a registering HA
                             elif splitData[1] == 'HA':
-                                self.setHA(conn, addr, data)
+                                self.setHA(conn, addr, data, newIP)
                     
                     # Receive message to be routed/delivered
                     elif (self.isIP(splitData[0]) and self.isIP(splitData[1])):
@@ -84,7 +84,7 @@ class RouterListener(threading.Thread):
         :return: void
         """
 
-        print("Server received register command with data:" + str(data))
+        print("Server received register command with data: " + str(data))
         splitIP = self.TCP_IP.split('.')
         newIP = splitIP[0] + '.' + splitIP[1] + '.' + splitIP[2] + '.' + str(self.ipCount)
         self.nodes[newIP] = conn
@@ -97,6 +97,7 @@ class RouterListener(threading.Thread):
         # Sends allocated IP back to node in order for node to set its IP
         MESSAGE = 'Allocated IP is ' + newIP
         conn.send(str.encode(MESSAGE))  # echo
+        return newIP
 
 
     def handleMessage(self, packet):
@@ -107,7 +108,26 @@ class RouterListener(threading.Thread):
 
         TO BE IMPLEMENTED
         """
-
+        print("Handling Message")
+        pktLen = len(packet)
+        assert pktLen == 3
+        src = packet[0]
+        dst = packet[1]
+        payload = packet[2]
+        builtPkt = " ".join(packet)
+        conn = None
+        haIP = None
+        print("Source IP: " + src)
+        print("Destination IP: " + dst)
+        print("Payload: " + payload)
+        if dst in self.nodes:
+            print("Destination is on the network")
+            print("Sending packet to " + dst + ": " + builtPkt)
+            conn = self.nodes[dst]
+            conn.send(builtPkt.encode())
+            print("Packet sent")
+        else:
+            print("[-] Cannot send packet to destination")
         # if (destination in self.nodes): deliver via corresponding socket to destination node
 
         # elif (destination not in self.nodes and first 2 octets match another known router's IP):
@@ -115,10 +135,7 @@ class RouterListener(threading.Thread):
 
         # elif (destination in home agent list): route to visiting network's router
 
-        # else: send error to source notify that destination does not exist
-        print("Handling message.")
-        pass
-
+        # else: send error to source notify that destination does not exist        
 
     def isIP(self, ip):
         """
@@ -154,7 +171,7 @@ class RouterListener(threading.Thread):
         print("Register HA.")
         pass
 
-    def setHA(self, conn, addr, data):
+    def setHA(self, conn, addr, data, ip):
         """
         Sets the connected node as the home agent of the network
         :param conn: socket descriptor for connection with node
@@ -164,5 +181,6 @@ class RouterListener(threading.Thread):
 
         TO BE IMPLEMENTED
         """
-        print("Set HA.")
-        pass
+        print("Setting Home Agent")
+        self.homeAgent = (ip, conn)
+        print("New Home Agent: " + ip + ", " + str(conn.getsockname()))

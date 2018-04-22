@@ -19,54 +19,93 @@ class Node(threading.Thread):
 	def run(self):
 		print("Mobile Node Starting")
 		if self.isHomeAgent:
-			threading.Thread(target=self.homeAgentWork).start()
+			threading.Thread(target=self.homeAgentWorker).start()
 		else:
-			threading.Thread(target=self.nodeWork).start()
+			threading.Thread(target=self.nodeWorker).start()
+		#threading.Thread(target=self.pktWorker).start()
 
-	def nodeWork(self):
+	def nodeWorker(self):
 		"""
 		:Description:	Thread that handles simple node protocol
 		:Return:		void
 		"""
-		msg = str(input("Enter a message or enter exit to quit: "))
+		msg = None
+		response = None
 		while msg != "exit":
-			tokens = msg.split(' ')
-			tokensLen = len(tokens)
-			if tokens[0] == "MOVE":
-				# Connect to new router on a different network
-				newIP = tokens[1]
-				newPort = tokens[2]
-				self.closeConnection()
-				self.conn = self.setConnection(newIP, int(newPort))
-			else: # Otherwise, send the message to the current router connection
-				response = self.sendMsg(msg)
-				responseTokens = response.split(' ')
+			# Register with router on first start
+			if self.firstStart:
+				msg = "REGISTER"
+				response = self.register(msg)
 				print("Router Response: " + response)
-				if tokens[0] == "REGISTER":
-					self.ip = responseTokens[3]
-					print("New IP Address: " + self.ip)
-				else:
-					print("[-] Unsupported sent message. Nothing to process")
+				self.firstStart = False
+			else:
+				# Split message
+				tokens = msg.split(' ')
+				tokensLen = len(tokens)
+				assert tokensLen > 0
+				if tokens[0] == "MOVE":
+					# Connect to new router on a different network
+					assert tokensLen == 3
+					newIP = tokens[1]
+					newPort = tokens[2]
+					self.closeConnection()
+					self.conn = self.setConnection(newIP, int(newPort))
+				else: # Otherwise, send the message to the current router connection
+					self.conn.send(msg.encode())
+					response = self.conn.recv(self.bufferSize).decode()
+					#self.pktQueue.put(response, block=True)	# Place response in packet queue
+					rdata = response.split(' ')
+					print("Router Response: " + response)
+					# Process response based on sent message
+					if tokens[0] == "REGISTER":
+						assert len(rdata) >= 4
+						self.ip = rdata[3]
+						print("New IP Address: " + self.ip)
 			msg = str(input("Enter a message or enter exit to quit: "))
 		self.closeConnection()
 
-	def homeAgentWork(self):
+	def homeAgentWorker(self):
 		"""
 		:Description:	Thread that handles the home agent protocol
 		:Return:		void
 		"""
 		msg = ""
 		response = ""
-		responseTokens = []
-		if self.firstStart:
-			print("Registering Home Agent")
-			msg = "REGISTER HA"
-			response = self.sendMsg(msg)
-			print("Router Response: " + response)
-			responseTokens = response.split(' ')
-			self.ip = responseTokens[3]
-			print("New IP Address: " + self.ip)
+		rdata = []
+		rDataLen = 0
+		done = False
+		while True:
+			# Register with router on first start
+			if self.firstStart:
+				msg = "REGISTER HA"
+				response = self.register(msg)
+				print("Router Response: " + response)
+				self.firstStart = False
+			else:
+				# Wait for a packet
+				print("Waiting for packet")
+				response = self.conn.recv(self.bufferSize).decode()
+				print("Packet received: " + response)
+				#self.pktQueue.put(response, block=True)	# Place response in packet queue
+				rdata = response.split(' ')
+				assert len(rdata) == 3
+				src = rdata[0]
+				dst = rdata[1]
+				payload = rdata[2]
+				if dst == self.ip:
+					print("Message received from " + src + ": " + response)
+					# Send an ACK back to the node
+					msg = self.ip + " " + src + " " + "ACK"
+					self.conn.send(msg.encode())
 		self.closeConnection()
+
+	def pktWorker(self):
+		"""
+		:Description:	Thread that processes received packets
+		:Return: None
+		"""
+		pkt = self.pktQueue.get(block=True)
+		print("Packet Worker Packet: " + pkt)
 
 
 	def setConnection(self, newIP, newPort):
@@ -77,12 +116,12 @@ class Node(threading.Thread):
 		:Return:		The new socket descriptor for the new router connection
 		"""
 		print("[+] Setting up new router connection")
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((newIP, newPort))
+		conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		conn.connect((newIP, newPort))
 		self.routerIP = newIP
 		self.routerPort = newPort
 		print("[+] Now connected to router at IP: " + str(newIP) + ", Port: " + str(newPort))
-		return s
+		return conn
 
 	def closeConnection(self):
 		"""
@@ -93,6 +132,27 @@ class Node(threading.Thread):
 			self.conn.close
 			self.conn = None
 
-	def sendMsg(self, msg):
+	def isConnectionOpen(self):
+		"""
+		:Description:	Checks if router connection exists
+		:Return: True if it exists, False if not
+		"""
+		if self.conn:
+			return True
+		else:
+			return False
+
+	def register(self, msg):
+		"""
+		:Description:	Registers node with router
+		:Param msg:		Registration msg
+		:Return:		Response from router
+		"""
+		print("Registering with router")
 		self.conn.send(msg.encode())
-		return self.conn.recv(self.bufferSize).decode()
+		response = self.conn.recv(self.bufferSize).decode()
+		rdata = response.split(' ')
+		assert len(rdata) >= 4
+		self.ip = rdata[3]
+		print("New IP Address: " + self.ip)
+		return response
