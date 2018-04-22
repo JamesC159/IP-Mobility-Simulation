@@ -4,7 +4,8 @@ host = '127.0.0.1'
 port = 2525
 
 def main():
-	node = Node(host, port)
+	node = Node(host, port, True)
+	#node = Node(host, port, False)
 	# connWrkThread = threading.Thread(target = connWrk, args=(host, port))
 	# #pktWrkThread = threading.Thread(target = pktWrkr)
 	# connWrkThread.start()

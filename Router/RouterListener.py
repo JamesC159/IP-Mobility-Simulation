@@ -36,6 +36,9 @@ class RouterListener(threading.Thread):
 
 
     def clientListen(self, conn, addr):
+        """
+        Add support for REGISTER HA to set the home agent for this network
+        """
         while True:
             try:
                 data = conn.recv(2048).decode()
@@ -43,18 +46,21 @@ class RouterListener(threading.Thread):
                     splitData = data.split(' ')
                     if (splitData[0] == 'REGISTER'):
 
-                        # Triggered when mobile node registers with visiting network
-                        if (len(splitData) > 1 and splitData[1] == 'FOREIGN'):
-                            # Allocate Care of Address IP
-                            self.allocateIP(conn, addr, data)
+                        # Allocate new IP address for node
+                        self.allocateIP(conn, addr, data)
 
-                            # Register CoA with home agent
-                            self.registerHA(conn, addr, data)
+                        if len(splitData) > 1:
 
-                        # Triggered when node first registers with home network
-                        else:
-                            self.allocateIP(conn, addr, data)
+                            # Triggered when node visits a network
+                            if splitData[1] == 'FOREIGN':
 
+                                # Register CoA with home agent
+                                self.registerHA(conn, addr, data)
+
+                            # Triggered when the node is a registering HA
+                            elif splitData[1] == 'HA':
+                                self.setHA(conn, addr, data)
+                    
                     # Receive message to be routed/delivered
                     elif (self.isIP(splitData[0]) and self.isIP(splitData[1])):
                         self.handleMessage(splitData)
@@ -146,4 +152,17 @@ class RouterListener(threading.Thread):
         """
 
         print("Register HA.")
+        pass
+
+    def setHA(self, conn, addr, data):
+        """
+        Sets the connected node as the home agent of the network
+        :param conn: socket descriptor for connection with node
+        :param addr: address of sending node
+        :param data: message sent by client in string format
+        :return: void
+
+        TO BE IMPLEMENTED
+        """
+        print("Set HA.")
         pass
