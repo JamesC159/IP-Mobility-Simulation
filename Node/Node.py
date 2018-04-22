@@ -14,6 +14,7 @@ class Node(threading.Thread):
 		self.conn = self.setConnection(self.routerIP, self.routerPort)
 		self.isHomeAgent = IS_HA
 		self.firstStart = True
+		self.regNodes = []
 		self.start()
 
 	def run(self):
@@ -94,6 +95,11 @@ class Node(threading.Thread):
 				payload = rdata[2]
 				if dst == self.ip:
 					print("Message received from " + src + ": " + response)
+					# Add node to registered nodes list if it sent a register message
+					if payload == "REGISTER":
+						print("Registering " + src)
+						self.regNodes.append(src)
+						print(src + " Registered")
 					# Send an ACK back to the node
 					msg = self.ip + " " + src + " " + "ACK"
 					self.conn.send(msg.encode())
