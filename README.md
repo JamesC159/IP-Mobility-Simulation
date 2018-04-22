@@ -3,7 +3,8 @@ To execute:<br/>
 (2) Run 'python3 Router.py'<br/>
 (3) Open another terminal and navigate to the Node directory<br/>
 (4) Run 'python3 NodeDriver.py'<br/><br/>
-Current messages supported between Node and Router:<br/>
-(1) REGISTER - The router on the node's network registers the node with the HA of the network. The node receives a newly allocated IP address<br/>
-(2) REGISTER FOREIGN - A foreign router, on a different network than the node's home network, registers the node with its HA. The node is given a Care of Address (new IP address on the foreign network). The node's HA is sent the Care of Address<br/>
-(3) MOVE new_ip new_port - Connects the node to the router specified by the new ip address and the new port of the router.
+Current Node messages supported by RouterListener:<br/>
+(1) REGISTER - Requests the router on the home network to register the node with the HA. Node receives a newly allocated IP address.<br/>
+(2) REGISTER FOREIGN - Requests the router on foreign network to register the node with the foreign HA. Node receives a new Care of Address (CoA). The node's HA on its home network is informed of the CoA.<br/>
+(3) REGISTER HA - Requests the router on the home network to register the node as the HA of the network. Node receives a newly allocated IP address.<br/>
+(4) MOVE new_ip new_port - Closes the node's current router connection and creates a new connection to the router specified at new_ip and new_port<br/>
