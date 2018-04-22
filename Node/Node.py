@@ -43,6 +43,8 @@ class Node(threading.Thread):
 			elif self.msg == "REGISTER FOREIGN":
 				self.ip = self.data[3] # Since we registered with FA, we received a new IP address
 				print(self.ip)
+			else:
+				print("[-] Unsupported sent message. Nothing to process")
 
 			self.msg = str(input("Enter a message or enter exit to quit: "))
 
