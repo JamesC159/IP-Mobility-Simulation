@@ -11,45 +11,58 @@ class Node(threading.Thread):
 		self.ip = ""
 		self.bufferSize = BUFFER_SIZE
 		self.pktQueue = queue.Queue()
-		self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.msg = ""
-		self.response = ""
-		self.data = []
+		self.conn = self.setConnection(self.routerIP, self.routerPort)
 		self.start()
 
 	def run(self):
 		print("Mobile Node Starting")
-		self.setConnection(self.routerIP, self.routerPort)
 		threading.Thread(target=self.connWork).start()
 
 	def connWork(self):
 		"""
-		Thread that handles communication between this node and a router
+		:Description:	Thread that handles communication between this node and a router
+		:Return:		void
 		"""
-		self.msg = str(input("Enter a message or enter exit to quit: "))
-		while self.msg != "exit":
-			# Send a msg and receive response
-			self.conn.send(self.msg.encode())
-			self.response = self.conn.recv(2000).decode()
-
-			# Tokenize response
-			self.data = self.response.split(' ')
-			print("Router Response: " + self.response)
-
-			# Process response based on msg sent
-			if self.msg == "REGISTER":
-				self.ip = self.data[3]	# Since we registered with HA, we received a new IP address
-				print(self.ip)
-			elif self.msg == "REGISTER FOREIGN":
-				self.ip = self.data[3] # Since we registered with FA, we received a new IP address
-				print(self.ip)
-			else:
-				print("[-] Unsupported sent message. Nothing to process")
-
-			self.msg = str(input("Enter a message or enter exit to quit: "))
-
-		self.conn.close()
+		msg = str(input("Enter a message or enter exit to quit: "))
+		while msg != "exit":
+			tokens = msg.split(' ')
+			tokensLen = len(tokens)
+			if tokens[0] == "MOVE":
+				# Connect to new router on a different network
+				newIP = tokens[1]
+				newPort = tokens[2]
+				self.closeConnection()
+				self.conn = self.setConnection(newIP, int(newPort))
+			else: # Otherwise, send the message to the current router connection
+				self.conn.send(msg.encode())
+				response = self.conn.recv(2000).decode()
+				data = response.split(' ')
+				print("Router Response: " + response)
+				if tokens[0] == "REGISTER":
+					self.ip = data[3]
+					print("New IP Address: " + self.ip)
+				else:
+					print("[-] Unsupported sent message. Nothing to process")
+			msg = str(input("Enter a message or enter exit to quit: "))
+		self.closeConnection()
 
 
 	def setConnection(self, newIP, newPort):
-		self.conn.connect((newIP, newPort))
+		"""
+		:Description:	Sets up a new router connection
+		:Param newIP: 	The IP address of the new router
+		:Param newPort: The port of the new router
+		:Return:		The new socket descriptor for the new router connection
+		"""
+		print("[+] Setting up new router connection")
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.connect((newIP, newPort))
+		self.routerIP = newIP
+		self.routerPort = newPort
+		print("[+] Now connected to router at IP: " + str(newIP) + ", Port: " + str(newPort))
+		return s
+
+	def closeConnection(self):
+		if self.conn:
+			self.conn.close
+			self.conn = None
