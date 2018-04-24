@@ -44,31 +44,33 @@ class RouterListener(threading.Thread):
                 data = conn.recv(2048).decode()
                 if data:
                     splitData = data.split(' ')
-                    if (splitData[0] == 'REGISTER'):
+
+                    if(len(splitData) < 3):
+                        print("Malformed packet received.")
+                        continue
+
+                    src = splitData[0]
+                    dst = splitData[1]
+                    payload = splitData[2]
+
+                    if (payload == 'REGISTER'):
 
                         # Allocate new IP address for node
                         newIP = self.allocateIP(conn, addr, data)
 
-                        if len(splitData) > 1:
+                    elif (payload == 'FOREIGN'):
+                        # Register CoA with home agent
+                        self.registerHA(conn, addr, data)
 
-                            # Triggered when node visits a network
-                            if splitData[1] == 'FOREIGN':
-
-                                # Register CoA with home agent
-                                self.registerHA(conn, addr, data)
-
-                            # Triggered when the node is a registering HA
-                            elif splitData[1] == 'HA':
-                                self.setHA(conn, addr, data, newIP)
-                    
-                    # Receive message to be routed/delivered
-                    elif (self.isIP(splitData[0]) and self.isIP(splitData[1])):
-                        self.handleMessage(splitData)
+                    # Triggered when the node is a registering HA
+                    elif (payload == 'HA'):
+                        self.setHA(conn, addr, data, newIP)
 
                     else:
-                        print("Server received data:" + str(data))
+                        print("Server  data:" + str(data))
                         MESSAGE = 'Not a valid command'
                         conn.send(str.encode(MESSAGE))  # echo
+
             except socket.timeout:
                 print("Timing out now")
                 conn.close()
