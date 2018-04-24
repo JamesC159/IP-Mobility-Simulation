@@ -1,6 +1,12 @@
 import socket
 import queue
 import threading
+import fcntl, os
+import errno
+import sys
+import select
+import tty
+import termios
 
 class Node(threading.Thread):
 
@@ -10,7 +16,8 @@ class Node(threading.Thread):
 		self.routerPort = TCP_PORT
 		self.ip = ""
 		self.bufferSize = BUFFER_SIZE
-		self.pktQueue = queue.Queue()
+		#self.pktQueue = queue.Queue()
+		self.responseQueue = queue.Queue()
 		self.conn = self.setConnection(self.routerIP, self.routerPort)
 		self.isHomeAgent = IS_HA
 		self.firstStart = True
@@ -23,6 +30,7 @@ class Node(threading.Thread):
 			threading.Thread(target=self.homeAgentWorker).start()
 		else:
 			threading.Thread(target=self.nodeWorker).start()
+		threading.Thread(target=self.responseWorker).start()
 		#threading.Thread(target=self.pktWorker).start()
 
 	def nodeWorker(self):
@@ -36,8 +44,9 @@ class Node(threading.Thread):
 			# Register with router on first start
 			if self.firstStart:
 				msg = "REGISTER"
-				response = self.register(msg)
-				print("Router Response: " + response)
+				threading.Thread(target=self.sendWorker, args=(msg,)).start()
+				# response = self.register(msg)
+				# print("Router Response: " + response)
 				self.firstStart = False
 			else:
 				# Split message
@@ -51,17 +60,8 @@ class Node(threading.Thread):
 					newPort = tokens[2]
 					self.closeConnection()
 					self.conn = self.setConnection(newIP, int(newPort))
-				else: # Otherwise, send the message to the current router connection
-					self.conn.send(msg.encode())
-					response = self.conn.recv(self.bufferSize).decode()
-					#self.pktQueue.put(response, block=True)	# Place response in packet queue
-					rdata = response.split(' ')
-					print("Router Response: " + response)
-					# Process response based on sent message
-					if tokens[0] == "REGISTER":
-						assert len(rdata) >= 4
-						self.ip = rdata[3]
-						print("New IP Address: " + self.ip)
+				else: # Otherwise, start a new messaging thread
+					threading.Thread(target=self.sendWorker, args=(msg,)).start()
 			msg = str(input("Enter a message or enter exit to quit: "))
 		self.closeConnection()
 
@@ -104,6 +104,32 @@ class Node(threading.Thread):
 					msg = self.ip + " " + src + " " + "ACK"
 					self.conn.send(msg.encode())
 		self.closeConnection()
+
+	def sendWorker(self, msg):
+		print("Sending message: " + msg)
+		#msg = " " + msg
+		self.conn.send(msg.encode())
+		# response = self.conn.recv(self.bufferSize).decode()
+		print("Message sent")
+		#self.responseQueue.put((response, msg), block=True)
+
+	def responseWorker(self):
+		while True:
+			response = self.conn.recv(self.bufferSize).decode()
+			print("Processing Response: " + response)
+			# response, msg = self.responseQueue.get(block=True)
+			# data = response.split(' ')
+			# print("\n\nProcessing Response: " + response)
+			# if msg == "REGISTER":
+			# 	assert len(data) == 4
+			# 	self.ip = data[3]
+			# 	print("New IP address: " + self.ip)
+			# else:
+			# 	src = data[0]
+			# 	dst = data[1]
+			# 	payload = data[2]
+			# 	msg = self.ip + " " + src + " ACK"
+			# 	self.conn.send(msg.encode())
 
 	def pktWorker(self):
 		"""
@@ -148,6 +174,25 @@ class Node(threading.Thread):
 		else:
 			return False
 
+	def isData(self):
+		return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
+
+	def isIP(self, ip):
+		"""
+		Check if passed-in IP is a valid IP
+		:param ip: string representation of IP address
+		:return: boolean
+		"""
+		splitIP = ip.split('.')
+		if (len(splitIP) != 4):
+			return False
+		for octet in splitIP:
+			if (not octet.isdigit()):
+				return False
+			elif (int(octet) < 0 or int(octet) > 255):
+				return False
+			return True
+
 	def register(self, msg):
 		"""
 		:Description:	Registers node with router
@@ -155,10 +200,11 @@ class Node(threading.Thread):
 		:Return:		Response from router
 		"""
 		print("Registering with router")
-		self.conn.send(msg.encode())
-		response = self.conn.recv(self.bufferSize).decode()
-		rdata = response.split(' ')
-		assert len(rdata) >= 4
-		self.ip = rdata[3]
-		print("New IP Address: " + self.ip)
+		threading.Thread(target=self.sendWorker, args=(self.conn, msg)).start()
+		# self.conn.send(msg.encode())
+		# response = self.conn.recv(self.bufferSize).decode()
+		# rdata = response.split(' ')
+		# assert len(rdata) >= 4
+		# self.ip = rdata[3]
+		# print("New IP Address: " + self.ip)
 		return response

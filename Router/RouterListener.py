@@ -31,7 +31,7 @@ class RouterListener(threading.Thread):
 
         while True:
             conn, addr = self.socket.accept()
-            conn.settimeout(60)
+            # conn.settimeout(60)
             threading.Thread(target=self.clientListen, args=(conn, addr)).start()
 
 
