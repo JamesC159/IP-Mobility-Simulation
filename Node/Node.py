@@ -1,12 +1,9 @@
 import socket
 import queue
 import threading
-import fcntl, os
 import errno
-import sys
-import select
-import tty
-import termios
+import time
+from Packet import Packet
 
 class Node(threading.Thread):
 
@@ -14,131 +11,124 @@ class Node(threading.Thread):
 		super().__init__()
 		self.routerIP = TCP_IP
 		self.routerPort = TCP_PORT
-		self.ip = ""
+		self.ip = "None"
+		self.isHomeAgent = IS_HA
 		self.bufferSize = BUFFER_SIZE
 		#self.pktQueue = queue.Queue()
 		self.responseQueue = queue.Queue()
+		self.inputQueue = queue.Queue()
+		self.pktQueue = queue.Queue()
+		self.ackQueue = queue.Queue()
 		self.conn = self.setConnection(self.routerIP, self.routerPort)
-		self.isHomeAgent = IS_HA
 		self.firstStart = True
 		self.regNodes = []
 		self.start()
 
 	def run(self):
-		print("Mobile Node Starting")
+		pkt = Packet("None", self.routerIP, "REGISTER")
+		print("Sending packet '" + pkt.toString() + "' to register with router")
+		self.conn.send(pkt.toString().encode())
+		print("Packet sent")
+		ack = self.conn.recv(self.bufferSize).decode()
+		print("ACK received: '" + ack + "'")
+		tokens = ack.split(' ')
+		self.ip = tokens[3]
+		print("New IP Address: " + self.ip)
+		self.firstStart = False
+
 		if self.isHomeAgent:
-			threading.Thread(target=self.homeAgentWorker).start()
+			print("Home Agent Starting")
+			#threading.Thread(target=self.homeAgentWorker).start()
 		else:
-			threading.Thread(target=self.nodeWorker).start()
-		threading.Thread(target=self.responseWorker).start()
-		#threading.Thread(target=self.pktWorker).start()
+			print("Mobile Node Starting")
+			# threading.Thread(target=self.nodeWorker).start()
+			threading.Thread(target=self.inputWorker).start()
 
-	def nodeWorker(self):
+		threading.Thread(target=self.recvWorker).start()
+		threading.Thread(target=self.ackWorker).start()
+
+		
+
+	def sendWorker(self, pkt):
 		"""
-		:Description:	Thread that handles simple node protocol
+		:Description:	Thread that handles sending a packet to the router
 		:Return:		void
 		"""
-		msg = None
-		response = None
-		while msg != "exit":
-			# Register with router on first start
-			if self.firstStart:
-				msg = "REGISTER"
-				threading.Thread(target=self.sendWorker, args=(msg,)).start()
-				# response = self.register(msg)
-				# print("Router Response: " + response)
-				self.firstStart = False
-			else:
-				# Split message
-				tokens = msg.split(' ')
-				tokensLen = len(tokens)
-				assert tokensLen > 0
-				if tokens[0] == "MOVE":
-					# Connect to new router on a different network
-					assert tokensLen == 3
-					newIP = tokens[1]
-					newPort = tokens[2]
-					self.closeConnection()
-					self.conn = self.setConnection(newIP, int(newPort))
-				else: # Otherwise, start a new messaging thread
-					threading.Thread(target=self.sendWorker, args=(msg,)).start()
-			msg = str(input("Enter a message or enter exit to quit: "))
-		self.closeConnection()
+		print("Sending packet: '" + pkt.toString() + "'")
+		self.conn.send(pkt.toString().encode())
 
-	def homeAgentWorker(self):
-		"""
-		:Description:	Thread that handles the home agent protocol
-		:Return:		void
-		"""
-		msg = ""
-		response = ""
-		rdata = []
-		rDataLen = 0
-		done = False
+	def recvWorker(self):
 		while True:
-			# Register with router on first start
-			if self.firstStart:
-				msg = "REGISTER HA"
-				response = self.register(msg)
-				print("Router Response: " + response)
-				self.firstStart = False
+			ack = self.conn.recv(self.bufferSize).decode()
+			print("ACK Received: '" + ack + "'")
+			self.ackQueue.put(ack)
+			time.sleep(0.5)
+
+	def ackWorker(self):
+		while True:
+			if self.ackQueue.empty():
+				continue
 			else:
-				# Wait for a packet
-				print("Waiting for packet")
-				response = self.conn.recv(self.bufferSize).decode()
-				print("Packet received: " + response)
-				#self.pktQueue.put(response, block=True)	# Place response in packet queue
-				rdata = response.split(' ')
-				assert len(rdata) == 3
-				src = rdata[0]
-				dst = rdata[1]
-				payload = rdata[2]
-				if dst == self.ip:
-					print("Message received from " + src + ": " + response)
-					# Add node to registered nodes list if it sent a register message
+				ack = self.ackQueue.get()
+				print("Processing ACK: '" + ack + "'")
+				if self.isHomeAgent:
+					tokens = ack.split(' ')
+					src = tokens[0]
+					dst = tokens[1]
+					payload = tokens[2]
 					if payload == "REGISTER":
 						print("Registering " + src)
 						self.regNodes.append(src)
 						print(src + " Registered")
-					# Send an ACK back to the node
-					msg = self.ip + " " + src + " " + "ACK"
-					self.conn.send(msg.encode())
-		self.closeConnection()
+						pkt = self.ip + " " + src + " ACK"
+						self.conn.send(pkt.encode())
+				time.sleep(0.5)
 
-	def sendWorker(self, msg):
-		print("Sending message: " + msg)
-		#msg = " " + msg
-		self.conn.send(msg.encode())
-		# response = self.conn.recv(self.bufferSize).decode()
-		print("Message sent")
-		#self.responseQueue.put((response, msg), block=True)
-
-	def responseWorker(self):
+	def inputWorker(self):
 		while True:
-			response = self.conn.recv(self.bufferSize).decode()
-			print("Processing Response: " + response)
-			# response, msg = self.responseQueue.get(block=True)
-			# data = response.split(' ')
-			# print("\n\nProcessing Response: " + response)
-			# if msg == "REGISTER":
-			# 	assert len(data) == 4
-			# 	self.ip = data[3]
-			# 	print("New IP address: " + self.ip)
-			# else:
-			# 	src = data[0]
-			# 	dst = data[1]
-			# 	payload = data[2]
-			# 	msg = self.ip + " " + src + " ACK"
-			# 	self.conn.send(msg.encode())
+			msg = str(input("Enter a message or enter exit to quit: "))
+			if msg == "exit":
+				break
+			tokens = msg.split(' ')
+			assert len(tokens) >= 3
+			src = tokens[0]
+			dst = tokens[1]
+			payload = tokens[2]
+			pkt = Packet(src, dst, payload)
+			threading.Thread(target=self.sendWorker, args=(pkt,)).start()
 
-	def pktWorker(self):
-		"""
-		:Description:	Thread that processes received packets
-		:Return: None
-		"""
-		pkt = self.pktQueue.get(block=True)
-		print("Packet Worker Packet: " + pkt)
 
+	# def homeAgentWorker(self):
+	# 	"""
+	# 	:Description:	Thread that handles the home agent protocol
+	# 	:Return:		void
+	# 	"""
+	# 	self.payload = ""
+	# 	self.ack = ""
+	# 	rdata = []
+	# 	rDataLen = 0
+	# 	done = False
+	# 	while True:
+	# 		print("Waiting for packet")
+	# 		self.ack = self.conn.recv(self.bufferSize).decode()
+	# 		print("Packet received: " + self.ack)
+	# 		#self.pktQueue.put(self.ack, block=True)	# Place self.ack in packet queue
+	# 		rdata = self.ack.split(' ')
+	# 		assert len(rdata) == 3
+	# 		src = rdata[0]
+	# 		dst = rdata[1]
+	# 		payload = rdata[2]
+	# 		if dst == self.ip:
+	# 			print("Message received from " + src + ": " + self.ack)
+	# 			# Add node to registered nodes list if it sent a register packet
+	# 			if payload == "REGISTER":
+	# 				print("Registering " + src)
+	# 				self.regNodes.append(src)
+	# 				print(src + " Registered")
+	# 			# Send an ACK back to the node
+	# 			self.payload = self.ip + " " + src + " " + "ACK"
+	# 			self.conn.send(self.payload.encode())
+	# 	self.closeConnection()
 
 	def setConnection(self, newIP, newPort):
 		"""
@@ -164,47 +154,11 @@ class Node(threading.Thread):
 			self.conn.close
 			self.conn = None
 
-	def isConnectionOpen(self):
-		"""
-		:Description:	Checks if router connection exists
-		:Return: True if it exists, False if not
-		"""
-		if self.conn:
-			return True
-		else:
-			return False
-
-	def isData(self):
-		return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
-
-	def isIP(self, ip):
-		"""
-		Check if passed-in IP is a valid IP
-		:param ip: string representation of IP address
-		:return: boolean
-		"""
-		splitIP = ip.split('.')
-		if (len(splitIP) != 4):
-			return False
-		for octet in splitIP:
-			if (not octet.isdigit()):
-				return False
-			elif (int(octet) < 0 or int(octet) > 255):
-				return False
-			return True
-
-	def register(self, msg):
-		"""
-		:Description:	Registers node with router
-		:Param msg:		Registration msg
-		:Return:		Response from router
-		"""
-		print("Registering with router")
-		threading.Thread(target=self.sendWorker, args=(self.conn, msg)).start()
-		# self.conn.send(msg.encode())
-		# response = self.conn.recv(self.bufferSize).decode()
-		# rdata = response.split(' ')
-		# assert len(rdata) >= 4
-		# self.ip = rdata[3]
-		# print("New IP Address: " + self.ip)
-		return response
+	def splitMsg(msg):
+		tokens = msg.split(' ')
+		tokensLen = len(tokens)
+		assert tokensLen >= 3
+		src = tokens[0]
+		dst = tokens[1]
+		payload = tokens[3]
+		return (tokens[0], tokens[1], tokens[2])
