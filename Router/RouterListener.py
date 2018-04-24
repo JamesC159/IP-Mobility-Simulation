@@ -53,23 +53,26 @@ class RouterListener(threading.Thread):
                     dst = splitData[1]
                     payload = splitData[2]
 
-                    if (payload == 'REGISTER'):
+                    if dst == self.TCP_IP:
+                        if (payload == 'REGISTER'):
 
-                        # Allocate new IP address for node
-                        newIP = self.allocateIP(conn, addr, data)
+                            # Allocate new IP address for node
+                            newIP = self.allocateIP(conn, addr, data)
 
-                    elif (payload == 'FOREIGN'):
-                        # Register CoA with home agent
-                        self.registerHA(conn, addr, data)
+                        elif (payload == 'FOREIGN'):
+                            # Register CoA with home agent
+                            self.registerHA(conn, addr, data)
 
-                    # Triggered when the node is a registering HA
-                    elif (payload == 'HA'):
-                        self.setHA(conn, addr, data, newIP)
+                        # Triggered when the node is a registering HA
+                        elif (payload == 'HA'):
+                            self.setHA(conn, addr, data, newIP)
 
+                        else:
+                            print("Server  data:" + str(data))
+                            MESSAGE = 'Not a valid command'
+                            conn.send(str.encode(MESSAGE))  # echo
                     else:
-                        print("Server  data:" + str(data))
-                        MESSAGE = 'Not a valid command'
-                        conn.send(str.encode(MESSAGE))  # echo
+                        self.handleMessage(splitData)
 
             except socket.timeout:
                 print("Timing out now")
@@ -111,8 +114,6 @@ class RouterListener(threading.Thread):
         TO BE IMPLEMENTED
         """
         print("Handling Message")
-        pktLen = len(packet)
-        assert pktLen == 3
         src = packet[0]
         dst = packet[1]
         payload = packet[2]
