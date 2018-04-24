@@ -37,7 +37,11 @@ class Node(threading.Thread):
 		self.firstStart = False
 
 		if self.isHomeAgent:
+			# Set home agent at router
 			print("Home Agent Starting")
+			pkt = Packet(self.ip, self.routerIP, "HA")
+			print("Setting Home Agent")
+			self.conn.send(pkt.toString().encode())
 			#threading.Thread(target=self.homeAgentWorker).start()
 		else:
 			print("Mobile Node Starting")
@@ -87,15 +91,20 @@ class Node(threading.Thread):
 	def inputWorker(self):
 		while True:
 			msg = str(input("Enter a message or enter exit to quit: "))
+			tokens = msg.split(' ')
 			if msg == "exit":
 				break
-			tokens = msg.split(' ')
-			assert len(tokens) >= 3
-			src = tokens[0]
-			dst = tokens[1]
-			payload = tokens[2]
-			pkt = Packet(src, dst, payload)
-			threading.Thread(target=self.sendWorker, args=(pkt,)).start()
+			elif tokens[0] == "MOVE":
+				newIP = tokens[1]
+				newPort = tokens[2]
+				self.connectionClose()
+				self.conn = self.setConnection(newIP, newPort)
+			else:
+				src = tokens[0]
+				dst = tokens[1]
+				payload = tokens[2]
+				pkt = Packet(src, dst, payload)
+				threading.Thread(target=self.sendWorker, args=(pkt,)).start()
 
 
 	# def homeAgentWorker(self):

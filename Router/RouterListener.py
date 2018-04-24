@@ -28,7 +28,6 @@ class RouterListener(threading.Thread):
 
     def run(self):
         print("Mobile IP Router : Waiting for connections from TCP clients...")
-
         while True:
             conn, addr = self.socket.accept()
             # conn.settimeout(60)
