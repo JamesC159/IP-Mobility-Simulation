@@ -12,14 +12,17 @@ class Node(threading.Thread):
 		self.routerIP = TCP_IP
 		self.routerPort = TCP_PORT
 		self.ip = "None"
+
+		# Boolean value to determine if node is a home agent
 		self.isHomeAgent = IS_HA
 		self.bufferSize = BUFFER_SIZE
-		self.responseQueue = queue.Queue()
-		self.inputQueue = queue.Queue()
-		self.pktQueue = queue.Queue()
 		self.ackQueue = queue.Queue()
+
+		# Start socket with home agent
 		self.conn = self.setConnection(self.routerIP, self.routerPort)
 		self.firstStart = True
+
+		# For Home Agents: dictionary mapping of home IP and visiting IP of mobile nodes
 		self.regNodes = {}
 		self.start()
 
@@ -45,7 +48,6 @@ class Node(threading.Thread):
 
 		else:
 			print("Mobile Node Starting")
-			# threading.Thread(target=self.nodeWorker).start()
 			threading.Thread(target=self.inputWorker).start()
 
 		threading.Thread(target=self.recvWorker).start()
@@ -135,10 +137,12 @@ class Node(threading.Thread):
 		:return: void
 		"""
 		while True:
-			msg = str(input("Enter a message or enter exit to quit: "))
+			msg = str(input("Enter a message or enter \'exit\' to quit: "))
 			tokens = msg.split(' ')
 			if msg == "exit":
 				break
+
+			# Handles moving from home network to visiting network
 			elif tokens[0] == "MOVE":
 				newIP = tokens[1]
 				newPort = tokens[2]
@@ -169,6 +173,7 @@ class Node(threading.Thread):
 				# Need to start receiving thread for new socket connection
 				threading.Thread(target=self.recvWorker).start()
 
+			# General format handles all other commands
 			else:
 				src = tokens[0]
 				dst = tokens[1]
@@ -199,13 +204,3 @@ class Node(threading.Thread):
 		if self.conn:
 			self.conn.close()
 			self.conn = None
-
-	"""def splitMsg(msg):
-		tokens = msg.split(' ')
-		tokensLen = len(tokens)
-		assert tokensLen >= 3
-		src = tokens[0]
-		dst = tokens[1]
-		payload = tokens[3]
-		return (tokens[0], tokens[1], tokens[2])
-	"""
