@@ -103,7 +103,7 @@ class RouterListener(threading.Thread):
         """
 
         print("Server received register command with data: " + str(data))
-        splitIP = self.TCP_IP.split('.')
+        splitIP = self.rtID.split('.')
         newIP = splitIP[0] + '.' + splitIP[1] + '.' + splitIP[2] + '.' + str(self.ipCount)
         self.nodes[newIP] = conn
         print("New dictionary: " + str(self.nodes.keys()))
@@ -136,12 +136,26 @@ class RouterListener(threading.Thread):
         print("Source IP: " + src)
         print("Destination IP: " + dst)
         print("Payload: " + payload)
+
+        dstSplit = dst.split('.')
+        routerCheck = dstSplit[0] + '.' + dstSplit[1] + '.' + dstSplit[2] + '.1'
+
+        print("Router check is " + routerCheck)
+        print("Router keys: " + str(self.routers.keys()))
+
+        # Check if destination address is located on this router's network
         if dst in self.nodes:
             print("Destination is on the network")
             print("Sending packet to " + dst + ": " + builtPkt)
             conn = self.nodes[dst]
             conn.send(builtPkt.encode())
             print("Packet sent")
+
+        # Check if destination address is within network of another router and route appropriately
+        elif (routerCheck in self.routers.keys()):
+            print("Can be routed to router at " + routerCheck)
+            msg = packet[0] + ' ' + packet[1] + ' ' + packet[2]
+            self.routers[routerCheck].send(msg.encode())
         else:
             print("[-] Cannot send packet to destination")
         # if (destination in self.nodes): deliver via corresponding socket to destination node
