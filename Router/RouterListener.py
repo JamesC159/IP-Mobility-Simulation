@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 from socketserver import ThreadingMixIn
 
 
@@ -7,18 +8,23 @@ from socketserver import ThreadingMixIn
 class RouterListener(threading.Thread):
     # Multithreaded Python server : TCP Server Socket Program Stub
 
-    def __init__(self, TCP_IP, TCP_PORT, BUFFER_SIZE = 1024):
+    def __init__(self, TCP_IP, TCP_PORT, rtID, BUFFER_SIZE = 1024):
         super().__init__()
 
         self.TCP_IP = TCP_IP
         self.TCP_PORT = TCP_PORT
         self.BUFFER_SIZE = BUFFER_SIZE
+
+        # NEW PARAMETER: Routers must specify the router ID (IP address within "network")
+        # Used by initRouters() in order to not create socket with itself
+        self.rtID = rtID
         self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.TCP_IP, self.TCP_PORT))
         self.socket.listen(5)
         self.homeAgent = ()
         self.ipCount = 2
+        self.routers = {}
         self.nodes = {}
 
         print("[+] New server socket thread started for " + self.TCP_IP + ":" + str(TCP_PORT))
@@ -27,6 +33,11 @@ class RouterListener(threading.Thread):
 
 
     def run(self):
+        # Sleep for 5 seconds to allow for starting other routers
+        time.sleep(5)
+
+        self.initRouters()
+
         print("Mobile IP Router : Waiting for connections from TCP clients...")
         while True:
             conn, addr = self.socket.accept()
@@ -65,6 +76,9 @@ class RouterListener(threading.Thread):
                         # Triggered when the node is a registering HA
                         elif (payload == 'HA'):
                             self.setHA(conn, addr, data, newIP)
+
+                        elif ('ROUTER' in payload):
+                            print(payload)
 
                         else:
                             print("Server  data:" + str(data))
@@ -186,3 +200,36 @@ class RouterListener(threading.Thread):
         print("Setting Home Agent")
         self.homeAgent = (ip, conn)
         print("New Home Agent: " + ip + ", " + str(conn.getsockname()))
+
+    def initRouters(self):
+        """
+        Establishes socket connections to other routers specified within the routing table file.
+        Sockets stored in dictionary:
+            :key: Router network address
+            :value: Socket to router
+        :return: void
+        """
+        with open('routingtable') as fp:
+            line = fp.readline()
+            while line:
+                splitLine = line.split(' ')
+
+                # only establishes sockets to other routers; prevents creation of socket with self
+                if (self.rtID != splitLine[0]):
+                    self.routers[splitLine[0]] = self.routerSocket(splitLine[1], splitLine[2])
+                    msg = str(splitLine[0]) + ' ' + str(splitLine[1]) + ' ' + 'ROUTER' + self.rtID + 'INIT'
+                    self.routers[splitLine[0]].send(msg.encode())
+
+                line = fp.readline()
+
+    def routerSocket(self, rIP, rPort):
+        """
+        Creates socket with other router specified by router IP and router Port
+        :param rIP: IP of router with which to make socket
+        :param rPort: Port of router with which to make socket
+        :return: returns socket instance for connection to router
+        """
+        print("Setting up connection to router.")
+        rconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        rconn.connect((rIP, int(rPort)))
+        return rconn
