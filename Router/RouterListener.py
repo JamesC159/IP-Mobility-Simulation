@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 from socketserver import ThreadingMixIn
 
 
@@ -7,18 +8,23 @@ from socketserver import ThreadingMixIn
 class RouterListener(threading.Thread):
     # Multithreaded Python server : TCP Server Socket Program Stub
 
-    def __init__(self, TCP_IP, TCP_PORT, BUFFER_SIZE = 1024):
+    def __init__(self, TCP_IP, TCP_PORT, rtID, BUFFER_SIZE = 1024):
         super().__init__()
 
         self.TCP_IP = TCP_IP
         self.TCP_PORT = TCP_PORT
         self.BUFFER_SIZE = BUFFER_SIZE
+
+        # NEW PARAMETER: Routers must specify the router ID (IP address within "network")
+        # Used by initRouters() in order to not create socket with itself
+        self.rtID = rtID
         self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.bind((self.TCP_IP, self.TCP_PORT))
         self.socket.listen(5)
         self.homeAgent = ()
         self.ipCount = 2
+        self.routers = {}
         self.nodes = {}
 
         print("[+] New server socket thread started for " + self.TCP_IP + ":" + str(TCP_PORT))
@@ -27,6 +33,11 @@ class RouterListener(threading.Thread):
 
 
     def run(self):
+        # Sleep for 5 seconds to allow for starting other routers
+        time.sleep(5)
+
+        self.initRouters()
+
         print("Mobile IP Router : Waiting for connections from TCP clients...")
         while True:
             conn, addr = self.socket.accept()
@@ -52,6 +63,11 @@ class RouterListener(threading.Thread):
                     dst = splitData[1]
                     payload = splitData[2]
 
+
+
+    # Very close to having home agent reassigned as ip address. Only issue is checking dst for self.TCP_IP
+    # which will be 127.0.0.1. Solution should be to check the fake network address as dst instead of self.TCP_IP.
+    # Need sleep, but I will be back up in a little over 4 hours to finish what you don't get done.
                     if dst == self.TCP_IP:
                         if (payload == 'REGISTER'):
 
@@ -65,6 +81,15 @@ class RouterListener(threading.Thread):
                         # Triggered when the node is a registering HA
                         elif (payload == 'HA'):
                             self.setHA(conn, addr, data, newIP)
+
+                        # Testing only; allows for making sure routers are connecting, will remove before turn in
+                        elif ('ROUTER' in payload):
+                            print(payload)
+
+                        # Sets the home agent's socket as the route to the home IP of the mobile node
+                        elif (payload == 'SETHA'):
+                            print('HA set for ' + dst)
+                            self.nodes[splitData[3]] = conn
 
                         else:
                             print("Server  data:" + str(data))
@@ -89,7 +114,7 @@ class RouterListener(threading.Thread):
         """
 
         print("Server received register command with data: " + str(data))
-        splitIP = self.TCP_IP.split('.')
+        splitIP = self.rtID.split('.')
         newIP = splitIP[0] + '.' + splitIP[1] + '.' + splitIP[2] + '.' + str(self.ipCount)
         self.nodes[newIP] = conn
         print("New dictionary: " + str(self.nodes.keys()))
@@ -122,12 +147,32 @@ class RouterListener(threading.Thread):
         print("Source IP: " + src)
         print("Destination IP: " + dst)
         print("Payload: " + payload)
+
+        dstSplit = dst.split('.')
+        routerCheck = dstSplit[0] + '.' + dstSplit[1] + '.' + dstSplit[2] + '.1'
+
+        print("Router check is " + routerCheck)
+        print("Router keys: " + str(self.routers.keys()))
+
+        # Check if destination address is located on this router's network
         if dst in self.nodes:
             print("Destination is on the network")
             print("Sending packet to " + dst + ": " + builtPkt)
             conn = self.nodes[dst]
             conn.send(builtPkt.encode())
             print("Packet sent")
+
+        # Check if destination address is within network of another router and route appropriately
+        elif (routerCheck in self.routers.keys()):
+            print("Can be routed to router at " + routerCheck)
+
+            # Had to make some messages 4 fields long (for registering CoA with Home Agent)
+            # Looping through the fields allows for getting all fields rather than narrowing down to 3
+            msg = ''
+            for field in packet:
+                msg += field
+                msg += ' '
+            self.routers[routerCheck].send(msg.encode())
         else:
             print("[-] Cannot send packet to destination")
         # if (destination in self.nodes): deliver via corresponding socket to destination node
@@ -186,3 +231,36 @@ class RouterListener(threading.Thread):
         print("Setting Home Agent")
         self.homeAgent = (ip, conn)
         print("New Home Agent: " + ip + ", " + str(conn.getsockname()))
+
+    def initRouters(self):
+        """
+        Establishes socket connections to other routers specified within the routing table file.
+        Sockets stored in dictionary:
+            :key: Router network address
+            :value: Socket to router
+        :return: void
+        """
+        with open('routingtable') as fp:
+            line = fp.readline()
+            while line:
+                splitLine = line.split(' ')
+
+                # only establishes sockets to other routers; prevents creation of socket with self
+                if (self.rtID != splitLine[0]):
+                    self.routers[splitLine[0]] = self.routerSocket(splitLine[1], splitLine[2])
+                    msg = str(splitLine[0]) + ' ' + str(splitLine[1]) + ' ' + 'ROUTER' + self.rtID + 'INIT'
+                    self.routers[splitLine[0]].send(msg.encode())
+
+                line = fp.readline()
+
+    def routerSocket(self, rIP, rPort):
+        """
+        Creates socket with other router specified by router IP and router Port
+        :param rIP: IP of router with which to make socket
+        :param rPort: Port of router with which to make socket
+        :return: returns socket instance for connection to router
+        """
+        print("Setting up connection to router.")
+        rconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        rconn.connect((rIP, int(rPort)))
+        return rconn

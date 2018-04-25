@@ -21,7 +21,7 @@ class Node(threading.Thread):
 		self.ackQueue = queue.Queue()
 		self.conn = self.setConnection(self.routerIP, self.routerPort)
 		self.firstStart = True
-		self.regNodes = []
+		self.regNodes = {}
 		self.start()
 
 	def run(self):
@@ -94,12 +94,33 @@ class Node(threading.Thread):
 					payload = tokens[2]
 
 					# Add this node to the registration table if it requests to REGISTER
-					if payload == "REGISTER":
+					"""if payload == "REGISTER":
 						print("Registering " + src)
 						self.regNodes.append(src)
 						print(src + " Registered")
-						pkt = self.ip + " " + src + " ACK"
+						pkt = self.ip + " " + src + " SETHA"
+						self.conn.send(pkt.encode())"""
+
+					# Add this node to the registration table if it requests to REGISTER
+					# Register message: <CoA> <dst> <payload=REGISTER> <oldIP>
+					print("Payload is " + payload)
+					print("Length of tokens is " + str(len(tokens)))
+					if (payload == "REGISTER"):
+						print("Registering CoA " + src + " for node " + tokens[3])
+						self.regNodes[tokens[3]] = src
+						print(src + " Registered")
+						splitIP = self.ip.split('.')
+						rtIP = splitIP[0] + '.' + splitIP[1] + '.' + splitIP[2] + '.1'
+						pkt = self.ip + " " + rtIP + " SETHA " + tokens[3]
 						self.conn.send(pkt.encode())
+
+					else:
+						if (dst in self.regNodes.keys()):
+							pkt = src + ' ' + self.regNodes[dst] + ' ' + payload
+							self.conn.send(pkt.encode())
+						else:
+							print('[-] Destination not registered with home agent')
+
 				time.sleep(0.5)
 
 	def inputWorker(self):
@@ -111,6 +132,7 @@ class Node(threading.Thread):
 			elif tokens[0] == "MOVE":
 				newIP = tokens[1]
 				newPort = tokens[2]
+				haIP = tokens[3]
 
 				# Close and set new connection
 				self.closeConnection()
@@ -126,8 +148,13 @@ class Node(threading.Thread):
 				ack = self.conn.recv(self.bufferSize).decode()
 				print("ACK received: '" + ack + "'")
 				tokens = ack.split(' ')
+				homeIP = self.ip
 				self.ip = tokens[3]
 				print("New IP Address: " + self.ip)
+
+				haRegpkt = self.ip + ' ' + haIP + ' ' + "REGISTER" + ' ' + homeIP
+				self.conn.send(haRegpkt.encode())
+
 			else:
 				src = tokens[0]
 				dst = tokens[1]
