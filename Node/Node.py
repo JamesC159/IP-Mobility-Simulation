@@ -25,6 +25,7 @@ class Node(threading.Thread):
 		self.start()
 
 	def run(self):
+		# Register this node with the router
 		pkt = Packet("None", self.routerIP, "REGISTER")
 		print("Sending packet '" + pkt.toString() + "' to register with router")
 		self.conn.send(pkt.toString().encode())
@@ -58,14 +59,23 @@ class Node(threading.Thread):
 		:Description:	Thread that handles sending a packet to the router
 		:Return:		void
 		"""
-		print("Sending packet: '" + pkt.toString() + "'")
-		self.conn.send(pkt.toString().encode())
+		done = False
+		while not done:
+			try:
+				print("Sending packet: '" + pkt.toString() + "'")
+				self.conn.send(pkt.toString().encode())
+				done = True
+			except IOError:
+				pass
 
 	def recvWorker(self):
 		while True:
-			ack = self.conn.recv(self.bufferSize).decode()
-			print("ACK Received: '" + ack + "'")
-			self.ackQueue.put(ack)
+			try:
+				ack = self.conn.recv(self.bufferSize).decode()
+				print("ACK Received: '" + ack + "'")
+				self.ackQueue.put(ack)
+			except IOError:
+				pass
 			time.sleep(0.5)
 
 	def ackWorker(self):
@@ -75,11 +85,15 @@ class Node(threading.Thread):
 			else:
 				ack = self.ackQueue.get()
 				print("Processing ACK: '" + ack + "'")
+
+				# If this node is a home agent, it needs to inspect the payload
 				if self.isHomeAgent:
 					tokens = ack.split(' ')
 					src = tokens[0]
 					dst = tokens[1]
 					payload = tokens[2]
+
+					# Add this node to the registration table if it requests to REGISTER
 					if payload == "REGISTER":
 						print("Registering " + src)
 						self.regNodes.append(src)
@@ -97,8 +111,23 @@ class Node(threading.Thread):
 			elif tokens[0] == "MOVE":
 				newIP = tokens[1]
 				newPort = tokens[2]
-				self.connectionClose()
-				self.conn = self.setConnection(newIP, newPort)
+
+				# Close and set new connection
+				self.closeConnection()
+				self.conn = self.setConnection(newIP, int(newPort))
+
+				# Register with new router
+				pkt = Packet(self.ip, self.routerIP, "REGISTER")
+				print("Sending packet '" + pkt.toString() + "' to register with router")
+				self.conn.send(pkt.toString().encode())
+				print("Packet sent")
+
+				# Receive the new IP address
+				ack = self.conn.recv(self.bufferSize).decode()
+				print("ACK received: '" + ack + "'")
+				tokens = ack.split(' ')
+				self.ip = tokens[3]
+				print("New IP Address: " + self.ip)
 			else:
 				src = tokens[0]
 				dst = tokens[1]
@@ -160,7 +189,7 @@ class Node(threading.Thread):
 		:Return:		void
 		"""
 		if self.conn:
-			self.conn.close
+			self.conn.close()
 			self.conn = None
 
 	def splitMsg(msg):
