@@ -63,6 +63,11 @@ class RouterListener(threading.Thread):
                     dst = splitData[1]
                     payload = splitData[2]
 
+
+
+    # Very close to having home agent reassigned as ip address. Only issue is checking dst for self.TCP_IP
+    # which will be 127.0.0.1. Solution should be to check the fake network address as dst instead of self.TCP_IP.
+    # Need sleep, but I will be back up in a little over 4 hours to finish what you don't get done.
                     if dst == self.TCP_IP:
                         if (payload == 'REGISTER'):
 
@@ -77,8 +82,14 @@ class RouterListener(threading.Thread):
                         elif (payload == 'HA'):
                             self.setHA(conn, addr, data, newIP)
 
+                        # Testing only; allows for making sure routers are connecting, will remove before turn in
                         elif ('ROUTER' in payload):
                             print(payload)
+
+                        # Sets the home agent's socket as the route to the home IP of the mobile node
+                        elif (payload == 'SETHA'):
+                            print('HA set for ' + dst)
+                            self.nodes[splitData[3]] = conn
 
                         else:
                             print("Server  data:" + str(data))
@@ -154,7 +165,13 @@ class RouterListener(threading.Thread):
         # Check if destination address is within network of another router and route appropriately
         elif (routerCheck in self.routers.keys()):
             print("Can be routed to router at " + routerCheck)
-            msg = packet[0] + ' ' + packet[1] + ' ' + packet[2]
+
+            # Had to make some messages 4 fields long (for registering CoA with Home Agent)
+            # Looping through the fields allows for getting all fields rather than narrowing down to 3
+            msg = ''
+            for field in packet:
+                msg += field
+                msg += ' '
             self.routers[routerCheck].send(msg.encode())
         else:
             print("[-] Cannot send packet to destination")
