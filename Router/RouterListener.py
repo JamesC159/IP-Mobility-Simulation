@@ -86,7 +86,7 @@ class RouterListener(threading.Thread):
 
                         # Message sent between routers when they establish their connections with each other
                         elif ('ROUTER' in payload):
-                            print(payload)
+                            print("Initialized socket connection with " + payload)
 
                         # Sets the home agent's socket as the route to the home IP of the mobile node
                         elif (payload == 'SETHA'):
@@ -115,18 +115,17 @@ class RouterListener(threading.Thread):
         :param conn: socket descriptor for connection with node
         :param addr: address of sending node
         :param data: message sent by client in string format
-        :return: void
+        :return: returns IP address of newly connected node
         """
 
         print("Server received register command with data: " + str(data))
         splitIP = self.rtID.split('.')
         newIP = splitIP[0] + '.' + splitIP[1] + '.' + splitIP[2] + '.' + str(self.ipCount)
         self.nodes[newIP] = conn
-        print("New dictionary: " + str(self.nodes.keys()))
+        print("Connected Nodes: " + str(self.nodes.keys()))
 
         # Increment counter used to allocate IPs
         self.ipCount += 1
-        print("New count is " + str(self.ipCount))
 
         # Sends allocated IP back to node in order for node to set its IP
         MESSAGE = 'Allocated IP is ' + newIP
@@ -137,16 +136,13 @@ class RouterListener(threading.Thread):
     def handleMessage(self, packet):
         """
         Decides whether destination is in router's network or to forward to another router
-        :param packet: packet contents represented as list of strings
-        :return: void
-
-        TO BE IMPLEMENTED
+        :param packet:  packet contents represented as list of strings
+        :return:        void
         """
         print("Handling Message")
         src = packet[0]
         dst = packet[1]
         payload = packet[2]
-        builtPkt = packet[0] + ' ' + packet[1] + ' ' + packet[2]
         conn = None
         haIP = None
         print("Source IP: " + src)
@@ -156,18 +152,18 @@ class RouterListener(threading.Thread):
         dstSplit = dst.split('.')
         routerCheck = dstSplit[0] + '.' + dstSplit[1] + '.' + dstSplit[2] + '.1'
 
-        print("Router check is " + routerCheck)
-        print("Router keys: " + str(self.routers.keys()))
-
         # Check if destination address is located on this router's network
         if dst in self.nodes:
             print("Destination is on the network")
+
+            # Had to make some messages 4 fields long (for registering CoA with Home Agent)
+            # Looping through the fields allows for getting all fields rather than narrowing down to 3
             msg = ''
             for field in packet:
                 msg += field
                 msg += ' '
 
-            print("Sending packeter to " + dst + ": " + msg)
+            print("Sending packet to " + dst + ": " + msg)
             nodeconn = self.nodes[dst]
             nodeconn.send(msg.encode())
             print("Packet sent")
@@ -185,20 +181,14 @@ class RouterListener(threading.Thread):
                 msg += ' '
             print("Routing message is " + msg)
             self.routers[routerCheck].send(msg.encode())
+
+        # Unknown route to destination
         else:
             print("[-] Cannot send packet to destination")
-        # if (destination in self.nodes): deliver via corresponding socket to destination node
-
-        # elif (destination not in self.nodes and first 2 octets match another known router's IP):
-        #   route message to matched router's socket
-
-        # elif (destination in home agent list): route to visiting network's router
-
-        # else: send error to source notify that destination does not exist        
 
     def isIP(self, ip):
         """
-        Check if passed-in IP is a valid IP
+        Check if passed-in IP is a valid IP by splitting each octet and verifying it falls within standard range (0-255)
         :param ip: string representation of IP address
         :return: boolean
         """
@@ -222,8 +212,6 @@ class RouterListener(threading.Thread):
         :param addr: address of sending node
         :param data: message sent by client in string format
         :return: void
-
-        TO BE IMPLEMENTED
         """
         print("Setting Home Agent")
         self.homeAgent = (ip, conn)
@@ -237,6 +225,9 @@ class RouterListener(threading.Thread):
             :value: Socket to router
         :return: void
         """
+
+        # Requires 'routingtable' file in same folder as where RouterListener is being run
+        # Pulls out router IP information from file to make socket connection with other routers
         with open('routingtable') as fp:
             line = fp.readline()
             while line:
@@ -245,7 +236,7 @@ class RouterListener(threading.Thread):
                 # only establishes sockets to other routers; prevents creation of socket with self
                 if (self.rtID != splitLine[0]):
                     self.routers[splitLine[0]] = self.routerSocket(splitLine[1], splitLine[2])
-                    msg = str(splitLine[0]) + ' ' + str(splitLine[1]) + ' ' + 'ROUTER' + self.rtID + 'INIT'
+                    msg = str(splitLine[0]) + ' ' + str(splitLine[1]) + ' ' + 'ROUTER' + self.rtID
                     self.routers[splitLine[0]].send(msg.encode())
 
                 line = fp.readline()
@@ -257,7 +248,6 @@ class RouterListener(threading.Thread):
         :param rPort: Port of router with which to make socket
         :return: returns socket instance for connection to router
         """
-        print("Setting up connection to router.")
         rconn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         rconn.connect((rIP, int(rPort)))
         return rconn
